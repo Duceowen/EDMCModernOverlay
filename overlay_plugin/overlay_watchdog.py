@@ -1,6 +1,7 @@
 """Watchdog responsible for launching and supervising the overlay client process."""
 from __future__ import annotations
 
+import os
 import shlex
 import subprocess
 import threading
@@ -10,6 +11,7 @@ from pathlib import Path
 from typing import Callable, Deque, Mapping, Optional, Sequence, Tuple
 
 LogFunc = Callable[[str], None]
+PARENT_PID_ENV = "EDMC_OVERLAY_PARENT_PID"
 
 
 class OverlayWatchdog:
@@ -99,19 +101,24 @@ class OverlayWatchdog:
             )
         return window > self._restart_window
 
+    def _build_child_env(self) -> dict[str, str]:
+        env = dict(self._env) if self._env is not None else dict(os.environ)
+        env[PARENT_PID_ENV] = str(os.getpid())
+        return env
+
     def _spawn_overlay(self) -> None:
         self._debug("Launching overlay client: %s" % self._format_command())
-        if self._env is not None:
-            interesting_keys = sorted(
-                key for key in self._env.keys() if key.startswith("QT_") or key.startswith("EDMC_OVERLAY")
-            )
-            self._debug("Overlay environment overrides: %s" % (", ".join(interesting_keys) or "none"))
+        child_env = self._build_child_env()
+        interesting_keys = sorted(
+            key for key in child_env.keys() if key.startswith("QT_") or key.startswith("EDMC_OVERLAY")
+        )
+        self._debug("Overlay environment overrides: %s" % (", ".join(interesting_keys) or "none"))
         popen_kwargs = {
             "cwd": str(self._working_dir),
             "stdout": subprocess.PIPE if self._capture_output else subprocess.DEVNULL,
             "stderr": subprocess.PIPE if self._capture_output else subprocess.DEVNULL,
             "creationflags": getattr(subprocess, "CREATE_NO_WINDOW", 0),
-            "env": self._env,
+            "env": child_env,
         }
         if self._capture_output:
             popen_kwargs.update(
@@ -133,7 +140,7 @@ class OverlayWatchdog:
             time.sleep(5.0)
             return
         self._process = proc
-        self._debug(f"Overlay process started (pid={proc.pid})")
+        self._debug(f"Overlay process started (pid={proc.pid}, parent_pid={os.getpid()})")
         self._start_output_readers(proc)
 
     def _wait_for_exit(self, interval: float) -> None:

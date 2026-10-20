@@ -20,6 +20,7 @@ from overlay_client.developer_helpers import DeveloperHelperController
 from overlay_client.plugin_group_clear import parse_clear_targets
 from overlay_client.plugin_group_filter import PluginGroupVisibilityFilter
 from overlay_client.overlay_client import CLIENT_DIR, DEV_MODE_ENV_VAR, OverlayWindow, _CLIENT_LOGGER, apply_log_level_hint
+from overlay_client.parent_watch import install_parent_watch
 from overlay_client.window_tracking import create_elite_window_tracker
 from overlay_plugin.plugin_group_resolver import PluginGroupResolver
 
@@ -288,8 +289,11 @@ def main(argv: Optional[list[str]] = None) -> int:
 
     window.show()
     data_client.start()
+    parent_watch = install_parent_watch(app, _CLIENT_LOGGER)
 
     exit_code = app.exec()
+    if parent_watch is not None:
+        parent_watch.stop()
     data_client.stop()
     _CLIENT_LOGGER.info("Overlay client exiting with code %s", exit_code)
     return int(exit_code)
